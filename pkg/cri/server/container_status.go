@@ -26,10 +26,27 @@ import (
 
 	"github.com/containerd/containerd/pkg/cri/store"
 	containerstore "github.com/containerd/containerd/pkg/cri/store/container"
+
+"k8s.io/klog/v2"
+"time"
 )
 
 // ContainerStatus inspects the container and returns the status.
 func (c *criService) ContainerStatus(ctx context.Context, r *runtime.ContainerStatusRequest) (*runtime.ContainerStatusResponse, error) {
+klog.Warningf("VDBG_CONTAINERSTATUS: CONTAINER_ID: '%s'\n", r.GetContainerId())
+        if r.GetContainerId() == "8888888844444444888888884444444488888888444444448888888844444444" {
+		st := &runtime.ContainerStatus{
+                    Id:          "8888",
+                    State:       runtime.ContainerState_CONTAINER_RUNNING,
+                    CreatedAt:   time.Now().Unix(),
+                    StartedAt:   time.Now().Unix(),
+		    Image:       &runtime.ImageSpec{Image: "docker.io/skiibum/testpod:latest"},
+		    ImageRef:    "docker.io/skiibum/testpod@sha256:7200c95d55fcd9f27edf8bf6e821241a65940eac493bc875d41c959ef1ffc3be",
+                }
+		info := map[string]string{}
+		return &runtime.ContainerStatusResponse{Status: st, Info: info}, nil
+        }
+
 	container, err := c.containerStore.Get(r.GetContainerId())
 	if err != nil {
 		return nil, errors.Wrapf(err, "an error occurred when try to find container %q", r.GetContainerId())
@@ -74,6 +91,7 @@ func (c *criService) ContainerStatus(ctx context.Context, r *runtime.ContainerSt
 		return nil, errors.Wrap(err, "failed to get verbose container info")
 	}
 
+klog.Warningf("VDBG_CONTAINERSTATUS: CONTAINER_ID: '%s' STATUS='%+v' INFO='%+v'\n", r.GetContainerId(), status, info)
 	return &runtime.ContainerStatusResponse{
 		Status: status,
 		Info:   info,

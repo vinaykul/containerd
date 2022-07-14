@@ -47,11 +47,57 @@ import (
 	"github.com/containerd/containerd/pkg/netns"
 	"github.com/containerd/containerd/snapshots"
 	selinux "github.com/opencontainers/selinux/go-selinux"
+
+"time"
+"k8s.io/klog/v2"
+"fmt"
+"os/exec"
 )
 
 func init() {
 	typeurl.Register(&sandboxstore.Metadata{},
 		"github.com/containerd/cri/pkg/store/sandbox", "Metadata")
+}
+
+func (c *criService) configurePodNetworking(ctx context.Context, sandbox *sandboxstore.Sandbox) (retErr error) {
+	var netnsMountDir string = "/var/run/netns"
+	var err error
+	if c.config.NetNSMountsUnderStateDir {
+		netnsMountDir = filepath.Join(c.config.StateDir, "netns")
+	}
+	sandbox.NetNS, err = netns.NewNetNS(netnsMountDir)
+	if err != nil {
+		return errors.Wrapf(err, "failed to create network namespace for sandbox %q", sandbox.ID)
+	}
+	sandbox.NetNSPath = sandbox.NetNS.GetPath()
+	defer func() {
+		if retErr != nil {
+			deferCtx, deferCancel := ctrdutil.DeferContext()
+			defer deferCancel()
+			// Teardown network if an error is returned.
+			if err := c.teardownPodNetwork(deferCtx, *sandbox); err != nil {
+				log.G(ctx).WithError(err).Errorf("Failed to destroy network for sandbox %q", sandbox.ID)
+			}
+			if err := sandbox.NetNS.Remove(); err != nil {
+				log.G(ctx).WithError(err).Errorf("Failed to remove network namespace %s for sandbox %q", sandbox.NetNSPath, sandbox.ID)
+			}
+			sandbox.NetNSPath = ""
+		}
+	}()
+	//TODO: start time
+	preCniAddTime := time.Now()
+	if err = c.setupPodNetwork(ctx, sandbox); err != nil {
+		return errors.Wrapf(err, "failed to setup network for sandbox %q", sandbox.ID)
+	}
+	//TODO: CNI ADD latency
+	postCniAddTime := time.Now()
+	//TODO: ping 8.8.8.8
+	netNsName := filepath.Base(sandbox.NetNSPath)
+	pingcmd := fmt.Sprintf("ip netns exec %s ping -c 1 8.8.8.8 > /dev/null && echo true || echo false", netNsName)
+	_, err = exec.Command("/bin/sh", "-c", pingcmd).Output()
+	netReadyTime := time.Now()
+	fmt.Printf("VDBGVDBGVDBGVDBG: POD: '%s' NETNS: '%s' CNI_ADD_TIME: '%+v' NETWORK_READY_TIME: '%+v'\n", sandbox.Name, netNsName, postCniAddTime.Sub(preCniAddTime), netReadyTime.Sub(preCniAddTime))
+	return nil
 }
 
 // RunPodSandbox creates and starts a pod-level sandbox. Runtimes should ensure
@@ -92,6 +138,31 @@ func (c *criService) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 			State: sandboxstore.StateUnknown,
 		},
 	)
+
+	klog.Warningf("VDBG: SANDBOX_NAME: '%s' LABELS: '%+v'\n", name, config.Labels)
+	if _, found := config.Labels["netperf"]; found {
+		klog.Warningf("VDBG: SANDBOX_NAME: '%s' IS NETPERF PROFILING POD", name)
+		// Configure pod networking and measure 'network-ready' latency. 
+		if retErr = c.configurePodNetworking(ctx, &sandbox); retErr != nil {
+			return nil, retErr
+		}
+		klog.Warningf("VDBG: SANDBOX_NAME: '%s' POD_NETWORK_SUCCESS\n", name)
+		if retErr = sandbox.Status.Update(func(status sandboxstore.Status) (sandboxstore.Status, error) {
+			// Set the pod sandbox as ready after successfully start sandbox container.
+			status.Pid = 7777
+			status.State = sandboxstore.StateReady
+			status.CreatedAt = time.Now()
+			return status, nil
+		}); retErr != nil {
+			return nil, errors.Wrap(retErr, "failed to update sandbox status")
+		}
+		klog.Warningf("VDBG: SANDBOX_NAME: '%s' POD_STATUS_UPDATE_SUCCESS\n", name)
+		if retErr = c.sandboxStore.Add(sandbox); retErr != nil {
+			return nil, errors.Wrapf(retErr, "failed to add sandbox %+v into store", sandbox)
+		}
+		klog.Warningf("VDBG: SANDBOX_NAME: '%s' POD_STORE_ADD_SUCCESS\n", name)
+		return &runtime.RunPodSandboxResponse{PodSandboxId: id}, nil
+	}
 
 	// Ensure sandbox container image snapshot.
 	image, err := c.ensureImageExists(ctx, c.config.SandboxImage, config)

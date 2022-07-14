@@ -21,11 +21,17 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+"k8s.io/klog/v2"
 )
 
 // ContainerStats returns stats of the container. If the container does not
 // exist, the call returns an error.
 func (c *criService) ContainerStats(ctx context.Context, in *runtime.ContainerStatsRequest) (*runtime.ContainerStatsResponse, error) {
+klog.Warningf("VDBG_CONTAINERSTATS: CONTAINER_ID: '%s'\n", in.GetContainerId())
+//        if in.GetContainerId() == "8888" {
+//		return &runtime.ContainerStatsResponse{Stats: &runtime.ContainerStats{}}, nil
+//        }
+
 	cntr, err := c.containerStore.Get(in.GetContainerId())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to find container")
@@ -43,5 +49,6 @@ func (c *criService) ContainerStats(ctx context.Context, in *runtime.ContainerSt
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to decode container metrics")
 	}
+klog.Warningf("VDBG_CONTAINERSTATS: CONTAINER_ID: '%s' C_STATS='%+v'\n", in.GetContainerId(), cs)
 	return &runtime.ContainerStatsResponse{Stats: cs}, nil
 }

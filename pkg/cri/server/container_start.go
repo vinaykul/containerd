@@ -36,10 +36,17 @@ import (
 	sandboxstore "github.com/containerd/containerd/pkg/cri/store/sandbox"
 	ctrdutil "github.com/containerd/containerd/pkg/cri/util"
 	cioutil "github.com/containerd/containerd/pkg/ioutil"
+
+"k8s.io/klog/v2"
 )
 
 // StartContainer starts the container.
 func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContainerRequest) (retRes *runtime.StartContainerResponse, retErr error) {
+klog.Warningf("VDBG_START_CONTAINER: CONTAINER_ID: '%s'\n", r.GetContainerId())
+	if r.GetContainerId() == "8888888844444444888888884444444488888888444444448888888844444444" {
+		return &runtime.StartContainerResponse{}, nil
+	}
+
 	cntr, err := c.containerStore.Get(r.GetContainerId())
 	if err != nil {
 		return nil, errors.Wrapf(err, "an error occurred when try to find container %q", r.GetContainerId())

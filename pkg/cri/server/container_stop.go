@@ -36,6 +36,9 @@ import (
 
 // StopContainer stops a running container with a grace period (i.e., timeout).
 func (c *criService) StopContainer(ctx context.Context, r *runtime.StopContainerRequest) (*runtime.StopContainerResponse, error) {
+	if r.GetContainerId() == "8888888844444444888888884444444488888888444444448888888844444444" {
+		return &runtime.StopContainerResponse{}, nil
+	}
 	// Get container config from container store.
 	container, err := c.containerStore.Get(r.GetContainerId())
 	if err != nil {

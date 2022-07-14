@@ -31,6 +31,9 @@ import (
 
 // RemoveContainer removes the container.
 func (c *criService) RemoveContainer(ctx context.Context, r *runtime.RemoveContainerRequest) (_ *runtime.RemoveContainerResponse, retErr error) {
+	if r.GetContainerId() == "8888888844444444888888884444444488888888444444448888888844444444" {
+		return &runtime.RemoveContainerResponse{}, nil
+	}
 	container, err := c.containerStore.Get(r.GetContainerId())
 	if err != nil {
 		if err != store.ErrNotExist {
