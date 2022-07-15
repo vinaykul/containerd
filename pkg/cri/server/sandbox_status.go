@@ -29,6 +29,7 @@ import (
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
 
 	sandboxstore "github.com/containerd/containerd/pkg/cri/store/sandbox"
+"strings"
 )
 
 // PodSandboxStatus returns the status of the PodSandbox.
@@ -145,19 +146,21 @@ type SandboxInfo struct {
 // toCRISandboxInfo converts internal container object information to CRI sandbox status response info map.
 func toCRISandboxInfo(ctx context.Context, sandbox sandboxstore.Sandbox) (map[string]string, error) {
 	container := sandbox.Container
-	task, err := container.Task(ctx, nil)
-	if err != nil && !errdefs.IsNotFound(err) {
-		return nil, errors.Wrap(err, "failed to get sandbox container task")
-	}
-
 	var processStatus containerd.ProcessStatus
-	if task != nil {
-		taskStatus, err := task.Status(ctx)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to get task status")
+	if strings.Contains(sandbox.Name, "nettestpod") {
+		processStatus = "running"
+	} else {
+		task, err := container.Task(ctx, nil)
+		if err != nil && !errdefs.IsNotFound(err) {
+			return nil, errors.Wrap(err, "failed to get sandbox container task")
 		}
-
-		processStatus = taskStatus.Status
+		if task != nil {
+			taskStatus, err := task.Status(ctx)
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to get task status")
+			}
+			processStatus = taskStatus.Status
+		}
 	}
 
 	si := &SandboxInfo{

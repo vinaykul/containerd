@@ -147,11 +147,63 @@ func (c *criService) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 			return nil, retErr
 		}
 		klog.Warningf("VDBG: SANDBOX_NAME: '%s' POD_NETWORK_SUCCESS\n", name)
+
+		// Ensure sandbox container image snapshot.
+		image, err := c.ensureImageExists(ctx, c.config.SandboxImage, config)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get sandbox image %q", c.config.SandboxImage)
+		}
+		containerdImage, err := c.toContainerdImage(ctx, *image)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get image from containerd %q", image.ID)
+		}
+		ociRuntime, err := c.getSandboxRuntime(config, r.GetRuntimeHandler())
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get sandbox runtime")
+		}
+		spec, err := c.sandboxContainerSpec(id, config, &image.ImageSpec.Config, sandbox.NetNSPath, ociRuntime.PodAnnotations)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to generate sandbox container spec")
+		}
+		specOpts, err := c.sandboxContainerSpecOpts(config, &image.ImageSpec.Config)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to generate sanbdox container spec options")
+		}
+		sandboxLabels := buildLabels(config.Labels, image.ImageSpec.Config.Labels, containerKindSandbox)
+		runtimeOpts, err := generateRuntimeOptions(ociRuntime, c.config)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to generate runtime options")
+		}
+		snapshotterOpt := snapshots.WithLabels(snapshots.FilterInheritedLabels(config.Annotations))
+		opts := []containerd.NewContainerOpts{
+			containerd.WithSnapshotter(c.config.ContainerdConfig.Snapshotter),
+			customopts.WithNewSnapshot(id, containerdImage, snapshotterOpt),
+			containerd.WithSpec(spec, specOpts...),
+			containerd.WithContainerLabels(sandboxLabels),
+			containerd.WithContainerExtension(sandboxMetadataExtension, &sandbox.Metadata),
+			containerd.WithRuntime(ociRuntime.Type, runtimeOpts)}
+		container, err := c.client.NewContainer(ctx, id, opts...)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create containerd container")
+		}
+		sandboxRootDir := c.getSandboxRootDir(id)
+		if err := c.os.MkdirAll(sandboxRootDir, 0755); err != nil {
+			return nil, errors.Wrapf(err, "failed to create sandbox root directory %q",
+				sandboxRootDir)
+		}
+		if err = c.setupSandboxFiles(id, config); err != nil {
+			return nil, errors.Wrapf(err, "failed to setup sandbox files")
+		}
+		info, err := container.Info(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to get sandbox container info")
+		}
+		sandbox.Container = container
+
 		if retErr = sandbox.Status.Update(func(status sandboxstore.Status) (sandboxstore.Status, error) {
-			// Set the pod sandbox as ready after successfully start sandbox container.
 			status.Pid = 7777
 			status.State = sandboxstore.StateReady
-			status.CreatedAt = time.Now()
+			status.CreatedAt = info.CreatedAt
 			return status, nil
 		}); retErr != nil {
 			return nil, errors.Wrap(retErr, "failed to update sandbox status")

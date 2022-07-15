@@ -59,7 +59,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		return nil, errors.Wrapf(err, "failed to find sandbox id %q", r.GetPodSandboxId())
 	}
 klog.Warningf("VDBG_CREATE_CONTAINER: SANDBOX_NAME: '%s'\n", sandbox.Name)
-	if strings.Contains(sandbox.Name, "netpod") {
+	if strings.Contains(sandbox.Name, "nettestpod") {
 		return &runtime.CreateContainerResponse{ContainerId: "8888888844444444888888884444444488888888444444448888888844444444"}, nil
 	}
 	sandboxID := sandbox.ID
