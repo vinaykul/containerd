@@ -29,6 +29,8 @@ import (
 
 	sandboxstore "github.com/containerd/containerd/pkg/cri/store/sandbox"
 	ctrdutil "github.com/containerd/containerd/pkg/cri/util"
+
+"k8s.io/klog/v2"
 )
 
 // StopPodSandbox stops the sandbox. If there are any running containers in the
@@ -87,6 +89,7 @@ func (c *criService) stopPodSandbox(ctx context.Context, sandbox sandboxstore.Sa
 		} else if closed {
 			sandbox.NetNSPath = ""
 		}
+		klog.Warningf("VDBG-SANDBOX-STOP:STOP_SANDBOX: <<< CNI_DEL ---  SANDBOX_NAME '%s'\n", sandbox.Name)
 		if err := c.teardownPodNetwork(ctx, sandbox); err != nil {
 			return errors.Wrapf(err, "failed to destroy network for sandbox %q", id)
 		}

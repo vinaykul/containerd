@@ -75,6 +75,7 @@ func (c *criService) configurePodNetworking(ctx context.Context, sandbox *sandbo
 			deferCtx, deferCancel := ctrdutil.DeferContext()
 			defer deferCancel()
 			// Teardown network if an error is returned.
+			klog.Warningf("VDBG-SANDBOX-RUN:CONFIGURE_POD_NETWORKING: <<< CNI_DEL ---  SANDBOX_NAME '%s' RET_ERR= '%v'\n", sandbox.Name, retErr)
 			if err := c.teardownPodNetwork(deferCtx, *sandbox); err != nil {
 				log.G(ctx).WithError(err).Errorf("Failed to destroy network for sandbox %q", sandbox.ID)
 			}
@@ -257,6 +258,7 @@ func (c *criService) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 			if retErr != nil {
 				deferCtx, deferCancel := ctrdutil.DeferContext()
 				defer deferCancel()
+				klog.Warningf("VDBG-SANDBOX-RUN:RUN_POD_SANDBOX: <<< CNI_DEL ---  SANDBOX_NAME '%s' RET_ERR= '%v'\n", sandbox.Name, retErr)
 				// Teardown network if an error is returned.
 				if err := c.teardownPodNetwork(deferCtx, sandbox); err != nil {
 					log.G(ctx).WithError(err).Errorf("Failed to destroy network for sandbox %q", id)
@@ -482,17 +484,26 @@ func (c *criService) setupPodNetwork(ctx context.Context, sandbox *sandboxstore.
 		return errors.Wrap(err, "get cni namespace options")
 	}
 
+	klog.Warningf("VDBG-SANDBOX-RUN:SETUP_POD_NETWORK: >>>> CNI_ADD ---  SANDBOX_NAME '%s'\n", sandbox.Name)
 	result, err := c.netPlugin.Setup(ctx, id, path, opts...)
 	if err != nil {
+		klog.Warningf("VDBG-SANDBOX-RUN:SETUP_POD_NETWORK-RESULT: SANDBOX '%s' ERROR: '%+v'\n", sandbox.Name, err)
 		return err
+	}
+	configs, ok := result.Interfaces[defaultIfName]
+	klog.Warningf("VDBG-SANDBOX-RUN:SETUP_POD_NETWORK-RESULT: SANDBOX '%s' RESULT: '%+v' OK=%v CONFIGS: '%+v'\n", sandbox.Name, result, ok, configs)
+	for iname, icfg := range result.Interfaces {
+		klog.Warningf("VDBG-SANDBOX-RUN:SETUP_POD_NETWORK-RESULT: SANDBOX '%s' IFNAME: '%s' INTF.CFGS: '%+v' INCF.MAC: '%s' INTF.SBOX: '%s'\n", sandbox.Name, iname, icfg.IPConfigs, icfg.Mac, icfg.Sandbox)
 	}
 	logDebugCNIResult(ctx, id, result)
 	// Check if the default interface has IP config
-	if configs, ok := result.Interfaces[defaultIfName]; ok && len(configs.IPConfigs) > 0 {
+	if ok && len(configs.IPConfigs) > 0 {
 		sandbox.IP, sandbox.AdditionalIPs = selectPodIPs(configs.IPConfigs)
 		sandbox.CNIResult = result
+		klog.Warningf("VDBG-SANDBOX-RUN:SETUP_POD_NETWORK-RESULT: SANDBOX '%s' SANDBOX_IP='%v'\n", sandbox.Name, sandbox.IP)
 		return nil
 	}
+	klog.Warningf("VDBG-SANDBOX-RUN:SETUP_POD_NETWORK-RESULT: SANDBOX '%s' ERROR-FAIL'\n", sandbox.Name)
 	return errors.Errorf("failed to find network info for sandbox %q", id)
 }
 
